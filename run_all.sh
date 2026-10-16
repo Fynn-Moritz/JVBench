@@ -10,6 +10,7 @@
 #   JDKS="jdk27" bash run_all.sh          # only one JDK
 #   DRYRUN=1 bash run_all.sh              # only list what would run
 #   VARIANTS='.*' bash run_all.sh         # disable the variant filter (all methods)
+#   PIN_CPU=2-5 bash run_all.sh           # Linux: run all JVMs on CPUs 2-5 (taskset)
 #
 # Expects:
 #   jars/JVBench-jdk19.jar, jars/JVBench-jdk27.jar
@@ -32,12 +33,23 @@ FILTER="${FILTER:-}"
 VARIANTS="${VARIANTS:-(serial|autoVec|explicitVec|fullVec|[Ii]ndexInRange)\$}"
 # DRYRUN=1 only lists the selected benchmarks without running them
 DRYRUN="${DRYRUN:-0}"
+# Linux only: CPU list for taskset, e.g. "2-5". Empty = no pinning.
+# Use at least 2 CPUs: with fewer, the JVM picks different defaults (e.g. the GC).
+PIN_CPU="${PIN_CPU:-}"
 
 case "$MODE" in
   short) JMH_OPTS=(-f 1 -wi 1 -i 2) ;;
   full)  JMH_OPTS=() ;;
   *) echo "Unknown MODE '$MODE' (allowed: short, full)"; exit 1 ;;
 esac
+
+RUNNER=()
+if [[ -n "$PIN_CPU" ]]; then
+  if ! command -v taskset >/dev/null 2>&1; then
+    echo "PIN_CPU is set, but taskset is not available (Linux only)"; exit 1
+  fi
+  RUNNER=(taskset -c "$PIN_CPU")
+fi
 
 # ---------- Helper functions ----------
 jdk_home() {
@@ -56,6 +68,7 @@ write_metadata() {
     echo "Machine:     $MACHINE"
     echo "JDK label:   $jdk"
     echo "Mode:        $MODE (JMH options: ${JMH_OPTS[*]:-from annotations})"
+    echo "CPU pinning: ${PIN_CPU:-none} (available CPUs: $(${RUNNER[@]+"${RUNNER[@]}"} nproc))"
     echo "JAR:         $jar"
     echo "JAR sha256:  $(sha256sum "$jar" | cut -d' ' -f1)"
     echo "Git commit:  $(git rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -66,12 +79,13 @@ write_metadata() {
     "$java_bin" -version 2>&1
     echo
     echo "== JVM vector flags =="
-    # UseSVE/UseNeon exist only on aarch64, UseAVX only on x86; missing flags are simply not listed
-    "$java_bin" -XX:+PrintFlagsFinal -version 2>/dev/null | tr -d '\r' \
-      | grep -E '[[:space:]](UseSVE|UseNeon|MaxVectorSize|UseSuperWord|UseAVX|UseSSE)[[:space:]]'
+    # UseSVE/UseNeon exist only on aarch64, UseAVX only on x86; missing flags are simply not listed.
+    # Run with the same pinning as the benchmarks, because CPU count affects JVM defaults (GC, heap).
+    ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" -XX:+PrintFlagsFinal -version 2>/dev/null | tr -d '\r' \
+      | grep -E '[[:space:]](UseSVE|UseNeon|MaxVectorSize|UseSuperWord|UseAVX|UseSSE|UseSerialGC|UseParallelGC|UseG1GC|UseZGC|MaxHeapSize)[[:space:]]'
     echo
     echo "== Vector species =="
-    "$java_bin" --add-modules jdk.incubator.vector tools/SpeciesInfo.java 2>&1
+    ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" --add-modules jdk.incubator.vector tools/SpeciesInfo.java 2>&1
     echo
     echo "== CPU =="
     if command -v lscpu >/dev/null 2>&1; then
@@ -134,7 +148,7 @@ for jdk in $JDKS; do
     regex="^${bm//./\\.}\$"   # exactly this one method
     t0=$SECONDS
     printf '  %-60s ' "$bm"
-    if "$java_bin" --add-modules jdk.incubator.vector -jar "$jar" "$regex" \
+    if ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" --add-modules jdk.incubator.vector -jar "$jar" "$regex" \
          ${JMH_OPTS[@]+"${JMH_OPTS[@]}"} -rf json -rff "$out" >"$log" 2>&1 \
        && [[ -s "$out" ]]; then
       echo "ok ($((SECONDS - t0)) s)"
