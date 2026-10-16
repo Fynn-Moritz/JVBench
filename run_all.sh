@@ -65,6 +65,11 @@ write_metadata() {
     echo "== java -version =="
     "$java_bin" -version 2>&1
     echo
+    echo "== JVM vector flags =="
+    # UseSVE/UseNeon exist only on aarch64, UseAVX only on x86; missing flags are simply not listed
+    "$java_bin" -XX:+PrintFlagsFinal -version 2>/dev/null | tr -d '\r' \
+      | grep -E '[[:space:]](UseSVE|UseNeon|MaxVectorSize|UseSuperWord|UseAVX|UseSSE)[[:space:]]'
+    echo
     echo "== Vector species =="
     "$java_bin" --add-modules jdk.incubator.vector tools/SpeciesInfo.java 2>&1
     echo
