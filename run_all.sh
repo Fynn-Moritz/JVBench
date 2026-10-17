@@ -11,6 +11,7 @@
 #   DRYRUN=1 bash run_all.sh              # only list what would run
 #   VARIANTS='.*' bash run_all.sh         # disable the variant filter (all methods)
 #   PIN_CPU=2-5 bash run_all.sh           # Linux: run all JVMs on CPUs 2-5 (taskset)
+#   JAVA_OPTS="-Xmx3g" bash run_all.sh    # extra JVM options, inherited by the JMH forks
 #
 # Expects:
 #   jars/JVBench-jdk19.jar, jars/JVBench-jdk27.jar
@@ -40,6 +41,11 @@ DRYRUN="${DRYRUN:-0}"
 # Linux only: CPU list for taskset, e.g. "2-5". Empty = no pinning.
 # Use at least 2 CPUs: with fewer, the JVM picks different defaults (e.g. the GC).
 PIN_CPU="${PIN_CPU:-}"
+# Extra JVM options for the JMH host JVM; JMH passes them on to the forked benchmark JVMs.
+# Deliberately not passed via -jvmArgsAppend, which could replace the @Fork(jvmArgsAppend)
+# of the benchmarks (e.g. -XX:-UseSuperWord).
+JAVA_OPTS="${JAVA_OPTS:-}"
+read -r -a JAVA_OPTS_ARR <<< "$JAVA_OPTS"
 
 case "$MODE" in
   short) JMH_OPTS=(-f 1 -wi 1 -i 2) ;;
@@ -73,6 +79,7 @@ write_metadata() {
     echo "JDK label:   $jdk"
     echo "Mode:        $MODE (JMH options: ${JMH_OPTS[*]:-from annotations})"
     echo "CPU pinning: ${PIN_CPU:-none} (available CPUs: $(${RUNNER[@]+"${RUNNER[@]}"} nproc))"
+    echo "JAVA_OPTS:   ${JAVA_OPTS:-none}"
     echo "JAR:         $jar"
     echo "JAR sha256:  $(sha256sum "$jar" | cut -d' ' -f1)"
     echo "Git commit:  $(git rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -85,7 +92,7 @@ write_metadata() {
     echo "== JVM vector flags =="
     # UseSVE/UseNeon exist only on aarch64, UseAVX only on x86; missing flags are simply not listed.
     # Run with the same pinning as the benchmarks, because CPU count affects JVM defaults (GC, heap).
-    ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" -XX:+PrintFlagsFinal -version 2>/dev/null | tr -d '\r' \
+    ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" ${JAVA_OPTS_ARR[@]+"${JAVA_OPTS_ARR[@]}"} -XX:+PrintFlagsFinal -version 2>/dev/null | tr -d '\r' \
       | grep -E '[[:space:]](UseSVE|UseNeon|MaxVectorSize|UseSuperWord|UseAVX|UseSSE|UseSerialGC|UseParallelGC|UseG1GC|UseZGC|MaxHeapSize)[[:space:]]'
     echo
     echo "== Vector species =="
@@ -161,7 +168,8 @@ for jdk in $JDKS; do
     regex="^${bm//./\\.}\$"   # exactly this one method
     t0=$SECONDS
     printf '  %-60s ' "$bm"
-    if ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" --add-modules jdk.incubator.vector -jar "$jar" "$regex" \
+    if ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" ${JAVA_OPTS_ARR[@]+"${JAVA_OPTS_ARR[@]}"} \
+         --add-modules jdk.incubator.vector -jar "$jar" "$regex" \
          ${JMH_OPTS[@]+"${JMH_OPTS[@]}"} -rf json -rff "$out" >"$log" 2>&1 \
        && [[ -s "$out" ]]; then
       echo "ok ($((SECONDS - t0)) s)"
