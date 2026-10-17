@@ -48,6 +48,18 @@ mvn clean package
 cp target/JVBench-2.0.0.jar jars/JVBench-jdk19.jar
 ```
 
+## Notes on the benchmarks
+
+**Axpy input size:** the `size` property is multiplied by 1024 in the code
+(`Integer.parseInt(System.getProperty("size", "70000")) * 1024`). The default of
+70000 therefore corresponds to 71,680,000 `double` elements, about 573 MB per array,
+not 70,000 elements as the original README suggests. With the JVM's default heap
+(one quarter of physical memory), machines with little RAM can fail with
+`OutOfMemoryError: Java heap space`; pass a larger heap via `JAVA_OPTS`, e.g.
+`JAVA_OPTS="-Xmx3g" bash run_all.sh`. The working set does not fit into any CPU
+cache, so with its default input Axpy is limited by memory bandwidth rather than
+by vector throughput.
+
 ## Running the benchmarks
 
 All scripts are started from the repository root. Parameters are passed as environment variables.
