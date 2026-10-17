@@ -48,13 +48,20 @@ extract() {
 }
 
 { extract "$JDK_A"; extract "$JDK_B"; } | awk -v A="$JDK_A" -v B="$JDK_B" '
-# Line layout: <jdk> <name> [params...] <mode> <cnt> <score> <+-> <error> <unit>
+# Line layout: <jdk> <name> [params...] <mode> <cnt> <score> [<+-> <error>] <unit>
+# The score can also be non-numeric (e.g. "≈ 10⁻⁴"); such values are reported as n/a.
+function num(x) { return (x ~ /^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$/) }
 {
-  key = $2
-  for (i = 3; i <= NF - 6; i++) key = key "(" $i ")"
-  s = $(NF-3); e = $(NF-1)
+  jdk = $1; key = $2; m = 0
+  for (i = 3; i <= NF; i++) if ($i ~ /^(thrpt|avgt|sample|ss)$/) { m = i; break }
+  if (!m) next
+  for (i = 3; i < m; i++) key = key "(" $i ")"
+  s = $(m+2); e = ""
+  if (NF >= m + 5) e = $(m+4)          # score, +-, error, unit
   gsub(",", ".", s); gsub(",", ".", e)
-  v[key, $1] = s; err[key, $1] = e; u[key, $1] = $NF; n[key] = 1
+  if (!num(s)) s = ""
+  if (!num(e)) e = ""
+  v[key, jdk] = s; err[key, jdk] = e; u[key, jdk] = $NF; n[key] = 1
 }
 
 # Matching serial method: same class, pattern classes mapped to the standard class
@@ -65,21 +72,25 @@ function serialkey(k,   c) {
   return c ".serial"
 }
 
+function valid(k, j) { return v[k, j] != "" && (v[k, j] + 0) > 0 }
+
 function speedup(k, j,   sk) {
   sk = serialkey(k)
-  if (v[sk, j] > 0 && v[k, j] > 0 && u[sk, j] == u[k, j])
-    return sprintf("%6.2f", v[sk, j] / v[k, j])
+  if (valid(sk, j) && valid(k, j) && u[sk, j] == u[k, j])
+    return sprintf("%6.2f", (v[sk, j] + 0) / (v[k, j] + 0))
   return "   n/a"
 }
 
+function show(x) { return (x == "") ? "n/a" : x }
+
 END {
   for (k in n) {
-    a = v[k, A]; b = v[k, B]
-    r = (a > 0 && b > 0 && u[k, A] == u[k, B]) ? sprintf("%6.2f", b / a) : "   n/a"
+    r = (valid(k, A) && valid(k, B) && u[k, A] == u[k, B]) \
+        ? sprintf("%6.2f", (v[k, B] + 0) / (v[k, A] + 0)) : "   n/a"
     printf "1|%s|%-50s %9s +- %-7s %-6s %9s +- %-7s %-6s %s\n", \
-      k, k, a, err[k, A], u[k, A], b, err[k, B], u[k, B], r
-    m = k; sub(/^.*\./, "", m)
-    if (m != "serial")
+      k, k, show(v[k, A]), show(err[k, A]), u[k, A], show(v[k, B]), show(err[k, B]), u[k, B], r
+    mth = k; sub(/^.*\./, "", mth); sub(/\(.*$/, "", mth)
+    if (mth != "serial")
       printf "2|%s|%-50s %10s %10s\n", k, k, speedup(k, A), speedup(k, B)
   }
 }' | sort -t'|' -k1,1 -k2,2 | awk -F'|' -v A="$JDK_A" -v B="$JDK_B" '
