@@ -23,8 +23,12 @@ set -u
 # ---------- Configuration ----------
 MODE="${MODE:-short}"
 JDKS="${JDKS:-jdk27 jdk19}"
-JDK19_HOME="${JDK19_HOME:-/c/Program Files/Java/jdk-19}"
-JDK27_HOME="${JDK27_HOME:-/c/Program Files/Java/jdk-27}"
+# Defaults: the /opt/jdk-NN links created by setup.sh on Linux, otherwise the Windows install paths
+default_jdk_home() {
+  if [[ -d "/opt/jdk-$1" ]]; then echo "/opt/jdk-$1"; else echo "/c/Program Files/Java/jdk-$1"; fi
+}
+JDK19_HOME="${JDK19_HOME:-$(default_jdk_home 19)}"
+JDK27_HOME="${JDK27_HOME:-$(default_jdk_home 27)}"
 JAR_DIR="${JAR_DIR:-jars}"
 RESULT_ROOT="${RESULT_ROOT:-results}"
 MACHINE="${MACHINE:-$(hostname)}"
