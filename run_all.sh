@@ -87,6 +87,12 @@ write_metadata() {
     echo "== Vector species =="
     ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" --add-modules jdk.incubator.vector tools/SpeciesInfo.java 2>&1
     echo
+    echo "== OS =="
+    uname -a
+    if [[ -r /etc/os-release ]]; then
+      grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release
+    fi
+    echo
     echo "== CPU =="
     if command -v lscpu >/dev/null 2>&1; then
       lscpu
