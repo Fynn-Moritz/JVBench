@@ -5,7 +5,8 @@
 # variables, clones the repository and builds one JAR per JDK.
 #
 # Usage:
-#   REPO_URL=https://github.com/Fynn-Moritz/JVBench.git bash setup.sh
+#   REPO_URL=https://github.com/<user>/JVBench.git bash setup.sh
+#   bash setup.sh
 #
 # Safe to run more than once: existing downloads, installations and the
 # repository are reused. Checksums of all downloads are written to
@@ -13,7 +14,7 @@
 
 set -euo pipefail
 
-REPO_URL="${REPO_URL:?Please set REPO_URL, e.g. https://github.com/Fynn-Moritz/JVBench.git}"
+REPO_URL="${REPO_URL:-https://github.com/Fynn-Moritz/JVBench.git}"
 REPO_DIR="${REPO_DIR:-$HOME/JVBench}"
 MAVEN_VERSION="${MAVEN_VERSION:-3.10.0}"
 CORRETTO19="${CORRETTO19:-19.0.2.7.1}"
