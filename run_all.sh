@@ -168,14 +168,27 @@ for jdk in $JDKS; do
     regex="^${bm//./\\.}\$"   # exactly this one method
     t0=$SECONDS
     printf '  %-60s ' "$bm"
-    if ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" ${JAVA_OPTS_ARR[@]+"${JAVA_OPTS_ARR[@]}"} \
-         --add-modules jdk.incubator.vector -jar "$jar" "$regex" \
-         ${JMH_OPTS[@]+"${JMH_OPTS[@]}"} -rf json -rff "$out" >"$log" 2>&1 \
-       && [[ -s "$out" ]]; then
+    ${RUNNER[@]+"${RUNNER[@]}"} "$java_bin" ${JAVA_OPTS_ARR[@]+"${JAVA_OPTS_ARR[@]}"} \
+      --add-modules jdk.incubator.vector -jar "$jar" "$regex" \
+      ${JMH_OPTS[@]+"${JMH_OPTS[@]}"} -rf json -rff "$out" >"$log" 2>&1
+    rc=$?
+
+    # A run only counts as ok if Java exited cleanly, the JSON contains a result
+    # (JMH may write "[]" for a failed benchmark) and the log shows no errors.
+    reason=""
+    if [[ $rc -ne 0 ]]; then
+      reason="exit code $rc"
+    elif ! grep -q '"primaryMetric"' "$out" 2>/dev/null; then
+      reason="no result in JSON"
+    elif grep -q -E '<failure>|Exception|java\.lang\.[A-Za-z]*Error' "$log"; then
+      reason="error in log: $(grep -m1 -o -E '<failure>|[A-Za-z.]*Exception|java\.lang\.[A-Za-z]*Error' "$log")"
+    fi
+
+    if [[ -z "$reason" ]]; then
       echo "ok ($((SECONDS - t0)) s)"
       total_ok=$((total_ok + 1))
     else
-      echo "FAILED ($((SECONDS - t0)) s), see $log"
+      echo "FAILED ($((SECONDS - t0)) s, $reason), see $log"
       rm -f "$out"
       echo "$jdk $bm" >> "$summary_dir/failed.txt"
       total_fail=$((total_fail + 1))
