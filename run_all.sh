@@ -100,6 +100,9 @@ write_metadata() {
       grep -m1 '^model name' /proc/cpuinfo 2>/dev/null
       grep -m1 -E '^(flags|Features)' /proc/cpuinfo 2>/dev/null
     fi
+    # Arm only: implementer and part number identify the core type, even if lscpu shows no model name
+    grep -m1 '^CPU implementer' /proc/cpuinfo 2>/dev/null
+    grep -m1 '^CPU part' /proc/cpuinfo 2>/dev/null
   } > "$meta"
   echo "[$jdk] Metadata: $meta"
 }
