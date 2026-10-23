@@ -43,13 +43,15 @@ extract() {
     echo "Warning: $dir missing" >&2
     return
   fi
-  grep -h -E '^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+ .*/op[[:space:]]*$' "$dir"/*.log 2>/dev/null \
+  grep -h -E '^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+ .*(/op|ops/[a-z]+)[[:space:]]*$' "$dir"/*.log 2>/dev/null \
     | tr -d '\r' | sed "s/^/$1 /"
 }
 
 { extract "$JDK_A"; extract "$JDK_B"; } | awk -v A="$JDK_A" -v B="$JDK_B" '
 # Line layout: <jdk> <name> [params...] <mode> <cnt> <score> [<+-> <error>] <unit>
 # The score can also be non-numeric (e.g. "≈ 10⁻⁴"); such values are reported as n/a.
+# Throughput results (unit ops/<t>) are converted to time per operation (<t>/op),
+# and the mode is shown next to the name whenever it is not "ss" (SingleShotTime).
 function num(x) { return (x ~ /^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$/) }
 {
   jdk = $1; key = $2; m = 0
@@ -61,7 +63,17 @@ function num(x) { return (x ~ /^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$/) }
   gsub(",", ".", s); gsub(",", ".", e)
   if (!num(s)) s = ""
   if (!num(e)) e = ""
-  v[key, jdk] = s; err[key, jdk] = e; u[key, jdk] = $NF; n[key] = 1
+  unit = $NF
+  if (unit ~ /^ops\//) {                 # throughput -> time per operation
+    tu = substr(unit, 5)
+    if (s != "" && (s + 0) > 0) {
+      if (e != "") e = sprintf("%.3f", (e + 0) / ((s + 0) * (s + 0)))
+      s = sprintf("%.3f", 1 / (s + 0))
+    }
+    unit = tu "/op"
+  }
+  v[key, jdk] = s; err[key, jdk] = e; u[key, jdk] = unit; n[key] = 1
+  if ($m != "ss") md[key] = md[key] (md[key] == "" ? "" : ",") jdk ":" $m
 }
 
 # Matching serial method: same class, pattern classes mapped to the standard class
@@ -82,16 +94,17 @@ function speedup(k, j,   sk) {
 }
 
 function show(x) { return (x == "") ? "n/a" : x }
+function label(k) { return (md[k] == "") ? k : k " [" md[k] "]" }
 
 END {
   for (k in n) {
     r = (valid(k, A) && valid(k, B) && u[k, A] == u[k, B]) \
         ? sprintf("%6.2f", (v[k, B] + 0) / (v[k, A] + 0)) : "   n/a"
     printf "1|%s|%-50s %9s +- %-7s %-6s %9s +- %-7s %-6s %s\n", \
-      k, k, show(v[k, A]), show(err[k, A]), u[k, A], show(v[k, B]), show(err[k, B]), u[k, B], r
+      k, label(k), show(v[k, A]), show(err[k, A]), u[k, A], show(v[k, B]), show(err[k, B]), u[k, B], r
     mth = k; sub(/^.*\./, "", mth); sub(/\(.*$/, "", mth)
     if (mth != "serial")
-      printf "2|%s|%-50s %10s %10s\n", k, k, speedup(k, A), speedup(k, B)
+      printf "2|%s|%-50s %10s %10s\n", k, label(k), speedup(k, A), speedup(k, B)
   }
 }' | sort -t'|' -k1,1 -k2,2 | awk -F'|' -v A="$JDK_A" -v B="$JDK_B" '
 $1 != sec {
