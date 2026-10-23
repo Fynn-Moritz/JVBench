@@ -64,6 +64,10 @@ public class SwaptionsPatternBenchmark {
 
     @Benchmark
     @OutputTimeUnit(TimeUnit.SECONDS)
+    @BenchmarkMode(Mode.SingleShotTime)
+    @Fork(value = 5)
+    @Warmup(iterations = 10)
+    @Measurement(iterations = 10)
     public void indexInRange(IndexInRangeState state) {
         HJMSecuritiesImpl.benchmark(true);
     }
